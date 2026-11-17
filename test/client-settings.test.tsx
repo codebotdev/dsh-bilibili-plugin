@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BilibiliSettings } from '../src/client/BilibiliSettings.js';
 import { biliStore } from '../src/client/store.js';
-import { apply } from '../src/client/index.js';
+import { apply, inject as clientDependencies } from '../src/client/index.js';
 import type { BiliProcessedMessageItem } from '../src/types.js';
 
 const account = { mid: 42, uname: '离线用户', face: '', level: 6, coins: 0, vipType: 0 };
@@ -70,12 +70,12 @@ describe('B站设置页迁移', () => {
     let ready!: () => unknown;
     const inject = vi.fn((_name, callback) => { ready = callback; });
     // Do not execute the style effect; no DOM or host startup is needed.
-    apply({ slots: { inject, register }, effect: vi.fn() });
+    apply({ slots: { inject, register }, inject: vi.fn(), effect: vi.fn() });
     expect(inject).toHaveBeenCalledWith('settings.section', expect.any(Function));
     expect(register).not.toHaveBeenCalled();
     ready();
     expect(register).toHaveBeenCalledExactlyOnceWith(
-      { name: 'settings.section', id: 'bilibili', order: 40, label: 'B站机器人' }, BilibiliSettings,
+      { name: 'settings.section', id: 'bilibili', order: 40, label: 'B站机器人' }, expect.any(Function),
     );
   });
 
@@ -212,6 +212,84 @@ describe('B站设置页迁移', () => {
     await act(async () => button('消息记录').props.onKeyDown(event('Home')));
     expect(button('配置').props['aria-selected']).toBe(true);
     expect(button('消息记录').props.tabIndex).toBe(-1);
+  });
+
+  it('shows conversation metadata only when there is a title or id, with honest title-only/id-only fallbacks', async () => {
+    recentMessages = [
+      { ...record, id: 'both', sessionId: 'session-both', sessionTitle: '真实对话标题' },
+      { ...record, id: 'title', sessionTitle: '只有标题' },
+      { ...record, id: 'id', sessionId: 'session-id-only' },
+      { ...record, id: 'legacy' },
+      { ...record, id: 'blank', sessionId: ' ', sessionTitle: ' ' },
+    ];
+    const open = vi.fn();
+    await act(async () => { view = create(<BilibiliSettings onOpenSession={open} />); });
+    await act(async () => button('消息记录').props.onClick());
+    const rows = view!.root.findAll(node => node.props.className?.split(' ').includes('dsh-bili-recent-conversation'));
+    expect(rows).toHaveLength(3);
+    expect(rows[1].findAllByType('button')).toHaveLength(0);
+    expect(rows[1].findAllByType('span').at(-1)!.children).toEqual(['只有标题']);
+    await act(async () => button('真实对话标题').props.onClick());
+    expect(open).toHaveBeenLastCalledWith('session-both');
+    await act(async () => button('打开对话').props.onClick());
+    expect(open).toHaveBeenLastCalledWith('session-id-only');
+  });
+
+  it('opens the actual session through the host navigation service and then closes settings', async () => {
+    recentMessages = [{ ...record, sessionId: 'durable-session', sessionTitle: 'B站会话' }];
+    const openSession = vi.fn(), close = vi.fn();
+    let Component!: React.ComponentType<{ close: () => void }>;
+    apply({ inject: (_deps: string[], ready: (scope: unknown) => void) => ready({ uiWorkspace: { openSession }, effect: (effect: () => unknown) => effect() }), effect: vi.fn(), slots: {
+      inject: (_name: string, ready: () => void) => ready(),
+      register: (_options: unknown, component: typeof Component) => { Component = component; return () => {}; },
+    } });
+    await act(async () => { view = create(<Component close={close} />); });
+    await act(async () => button('消息记录').props.onClick());
+    await act(async () => button('B站会话').props.onClick());
+    expect(openSession).toHaveBeenCalledExactlyOnceWith('durable-session');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(openSession.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps settings and logo effects registered before navigation is ready, and releases navigation independently', async () => {
+    recentMessages = [{ ...record, sessionId: 'session-late', sessionTitle: '等待导航的会话' }];
+    const openSession = vi.fn(), close = vi.fn(), effect = vi.fn();
+    let Component!: React.ComponentType<{ close: () => void }>;
+    let ready!: (scope: unknown) => void;
+    let release!: () => void;
+    apply({ effect, inject: (_deps: string[], callback: typeof ready) => { ready = callback; }, slots: {
+      inject: (_name: string, callback: () => void) => callback(),
+      register: (_options: unknown, component: typeof Component) => { Component = component; return () => {}; },
+    } });
+    expect(clientDependencies).toEqual(['slots']);
+    expect(effect.mock.calls.map(([, label]) => label)).toEqual(['bilibili: styles', 'bilibili: session logo']);
+    await act(async () => { view = create(<Component close={close} />); });
+    await act(async () => button('消息记录').props.onClick());
+    await act(async () => button('等待导航的会话').props.onClick());
+    expect(close).not.toHaveBeenCalled();
+    expect(text()).toContain('打开对话失败');
+    ready({ uiWorkspace: { openSession }, effect: (callback: () => () => void) => { release = callback(); } });
+    await act(async () => button('等待导航的会话').props.onClick());
+    expect(openSession).toHaveBeenCalledExactlyOnceWith('session-late');
+    expect(close).toHaveBeenCalledTimes(1);
+    release();
+    await act(async () => button('等待导航的会话').props.onClick());
+    expect(openSession).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps records visible if opening fails, and disables links when navigation is absent', async () => {
+    recentMessages = [{ ...record, sessionId: 'missing-session', sessionTitle: '失效会话' }];
+    await render();
+    await act(async () => button('消息记录').props.onClick());
+    expect(button('失效会话').props.disabled).toBe(true);
+    await act(async () => view!.unmount());
+    await act(async () => { view = create(<BilibiliSettings onOpenSession={() => { throw new Error('unavailable'); }} />); });
+    await act(async () => button('消息记录').props.onClick());
+    await act(async () => button('失效会话').props.onClick());
+    expect(text()).toContain('打开对话失败');
+    expect(text()).toContain(record.message);
+    expect(button('消息记录').props['aria-selected']).toBe(true);
   });
 
   it('restores automatic binding as the default and persists explicit workspace selection', async () => {

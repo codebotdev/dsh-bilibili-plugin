@@ -77,6 +77,7 @@ export function isModelGroup(value: unknown): value is ModelGroup {
 export function isRecentMessage(value: unknown): value is BiliProcessedMessageItem {
   return isRecord(value) && text(value.id) && number(value.time) && text(value.sourceType)
     && optionalText(value.sourceTitle) && optionalText(value.uri) && text(value.message)
+    && optionalText(value.sessionId) && optionalText(value.sessionTitle)
     && isRecord(value.user) && text(value.user.mid) && text(value.user.uname) && optionalText(value.user.avatar)
     && text(value.status) && ['processing', 'replied', 'command_replied', 'failed', 'ignored'].includes(value.status)
     && (value.images === undefined || arrayOf(text)(value.images)) && optionalText(value.replyText) && optionalText(value.error);

@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown';
 
-const PACKAGE_NAME = 'dsh-bilibili-plugin';
+const PACKAGE_NAME = '@seiuna/dsh-bilibili-plugin';
 
 export default defineConfig([
   // 1. Host bundle (ESM for Node.js)

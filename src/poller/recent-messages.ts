@@ -7,6 +7,8 @@ function isRecentMessage(value: unknown): value is BiliProcessedMessageItem {
   const item = value as Partial<BiliProcessedMessageItem>;
   return typeof item.id === 'string' && typeof item.time === 'number' && Number.isFinite(item.time)
     && typeof item.sourceType === 'string' && typeof item.message === 'string'
+    && (item.sessionId === undefined || typeof item.sessionId === 'string')
+    && (item.sessionTitle === undefined || typeof item.sessionTitle === 'string')
     && !!item.user && typeof item.user.mid === 'string' && typeof item.user.uname === 'string'
     && ['processing', 'replied', 'command_replied', 'failed', 'ignored'].includes(item.status ?? '')
     && (item.images === undefined || (Array.isArray(item.images) && item.images.every(image => typeof image === 'string')));

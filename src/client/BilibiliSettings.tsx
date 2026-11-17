@@ -36,7 +36,11 @@ function formatRelativeTime(ts: number): string {
   return `${m}月${day}日 ${h}:${min}`;
 }
 
-export function BilibiliSettings() {
+export interface BilibiliSettingsProps {
+  onOpenSession?: (sessionId: string) => void;
+}
+
+export function BilibiliSettings({ onOpenSession }: BilibiliSettingsProps = {}) {
   const { status, error: authError, isLoading: authLoading } = useBiliStore();
 
   const configReads = useRef(createLatestRequest());
@@ -980,6 +984,8 @@ export function BilibiliSettings() {
                         : 'dsh-bili-recent-tag';
                     const tagText = isVideo ? '视频' : isDynamic ? '动态' : msg.sourceType || '内容';
 
+                    const sessionId = msg.sessionId?.trim();
+                    const sessionTitle = msg.sessionTitle?.trim();
                     return (
                       <div key={msg.id} className="dsh-bili-recent-card">
                         <div className="dsh-bili-recent-card-top">
@@ -1034,6 +1040,24 @@ export function BilibiliSettings() {
                                 {msg.sourceTitle}
                               </span>
                             )}
+                          </div>
+                        )}
+
+                        {(sessionTitle || sessionId) && (
+                          <div className="dsh-bili-recent-source dsh-bili-recent-conversation">
+                            <span className={tagClass}>对话</span>
+                            {sessionId ? (
+                              <button
+                                type="button"
+                                className="dsh-bili-recent-title-link dsh-bili-session-link"
+                                disabled={!onOpenSession}
+                                title={onOpenSession ? (sessionTitle || sessionId) : '当前 DSH 对话导航不可用'}
+                                onClick={() => {
+                                  try { onOpenSession?.(sessionId); }
+                                  catch { setRecentError('打开对话失败，请确认该对话仍可访问后重试'); }
+                                }}
+                              >{sessionTitle || '打开对话'}</button>
+                            ) : <span className="dsh-bili-session-title">{sessionTitle}</span>}
                           </div>
                         )}
 

@@ -16,7 +16,7 @@ export * from './poller-service.js';
 export * from './agent-bridge.js';
 export * from './command/index.js';
 
-export const name = 'dsh-bilibili-plugin';
+export const name = '@seiuna/dsh-bilibili-plugin';
 export const inject = ['tools', 'webServer', 'agents', 'systemPrompt', 'workspaceRegistry'];
 
 export interface Config { enabled?: boolean }

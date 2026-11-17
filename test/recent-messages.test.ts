@@ -156,6 +156,7 @@ describe('Recent Messages Tracking (最近处理消息跟踪与存储)', () => {
       time: 1700000000000,
       sourceType: 'dynamic',
       sourceTitle: '持久化动态',
+      sessionId: 'session-durable', sessionTitle: '持久化对话标题',
       user: { mid: '999', uname: 'durable_user' },
       message: '持久化测试文本',
       status: 'replied',
@@ -176,6 +177,7 @@ describe('Recent Messages Tracking (最近处理消息跟踪与存储)', () => {
     expect(list[0].id).toBe('durable_1');
     expect(list[0].message).toBe('持久化测试文本');
     expect(list[0].replyText).toBe('已回复持久化');
+    expect(list[0]).toMatchObject({ sessionId: 'session-durable', sessionTitle: '持久化对话标题' });
   });
 
   it('串行持久化并发更新与清空，不产生共享tmp覆盖或旧数据复活', async () => {
@@ -207,6 +209,20 @@ describe('Recent Messages Tracking (最近处理消息跟踪与存储)', () => {
     (PollerService as any).instance = null; poller = PollerService.getInstance(manager);
     await (poller as any).loadProcessed();
     expect(poller.getRecentMessages()).toEqual([]);
+  });
+
+  it('restores legacy records without session metadata and filters invalid session metadata', async () => {
+    await poller.flushRecentMessages();
+    const legacy = { id: 'legacy', time: 1, sourceType: 'video', user: { mid: '1', uname: 'offline' }, message: 'old', status: 'replied' };
+    await fs.writeFile(testConfigFile + '.recent.json', JSON.stringify([
+      legacy, { ...legacy, id: 'id-only', sessionId: 'session-id' }, { ...legacy, id: 'title-only', sessionTitle: '标题' },
+      { ...legacy, id: 'bad-id', sessionId: 123 }, { ...legacy, id: 'bad-title', sessionTitle: {} },
+    ]));
+    (PollerService as any).instance = null; poller = PollerService.getInstance(manager);
+    await (poller as any).loadProcessed();
+    expect(poller.getRecentMessages().map(item => item.id)).toEqual(['legacy', 'id-only', 'title-only']);
+    expect(poller.getRecentMessages()[0].sessionId).toBeUndefined();
+    expect(poller.getRecentMessages()[0].sessionTitle).toBeUndefined();
   });
 
   it('返回历史深拷贝，调用方不能修改内部状态', () => {

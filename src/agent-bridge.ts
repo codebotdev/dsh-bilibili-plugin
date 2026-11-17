@@ -8,6 +8,7 @@ import type { BiliSessionContext } from './types.js';
 import { PollerService } from './poller-service.js';
 import { getLogger } from './command/logger.js';
 import { downloadBilibiliImage } from './network/bilibili-image.js';
+import { commentKey } from './poller/identifiers.js';
 
 const logger = getLogger('BiliAgentBridge');
 
@@ -316,6 +317,18 @@ export class BilibiliAgentBridge {
     if (this.disposed) throw new Error('Bilibili bridge disposed');
     const record = await this.getOrCreate(sessionCtx);
     if (this.disposed) throw new Error('Bilibili bridge disposed');
+
+    if (record) {
+      let sessionTitle: string | undefined;
+      try {
+        const titles = this.ctx.get('sessionTitle');
+        const title: unknown = titles?.get?.(record.agent.session)?.title;
+        if (typeof title === 'string' && title.trim()) sessionTitle = title.trim();
+      } catch { /* Missing title metadata must not block message delivery or invent a title. */ }
+      PollerService.getInstance().updateRecentMessage(commentKey(sessionCtx), {
+        sessionId: record.sessionId, sessionTitle,
+      });
+    }
 
     const parts: string[] = [];
     const source = sessionCtx.sourceType === 'video'

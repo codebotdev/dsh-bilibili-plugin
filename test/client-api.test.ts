@@ -72,9 +72,15 @@ describe('typed Bilibili requests (offline fetch)', () => {
   });
 
   it('returns actual recent message items without manufacturing empty histories', async () => {
-    const item = { id: 'r', time: 1, sourceType: 'video', user: { mid: '9007199254740993', uname: 'u' }, message: '', images: ['https://example.test/comment.png'], status: 'processing' };
+    const item = { id: 'r', time: 1, sourceType: 'video', user: { mid: '9007199254740993', uname: 'u' }, message: '', images: ['https://example.test/comment.png'], status: 'processing', sessionId: 'session-actual', sessionTitle: '真实对话标题' };
     fetchMock.mockResolvedValue(json({ success: true, list: [item] }));
     await expect(fetchRecentMessages()).resolves.toEqual([item]);
+  });
+
+  it.each([{ sessionId: 7 }, { sessionTitle: {} }])('rejects invalid conversation metadata: %j', async metadata => {
+    fetchMock.mockResolvedValue(json({ success: true, list: [{ id: 'r', time: 1, sourceType: 'video',
+      user: { mid: '1', uname: 'offline' }, message: 'text', status: 'processing', ...metadata }] }));
+    await expect(fetchRecentMessages()).rejects.toMatchObject({ kind: 'invalid-response' });
   });
 
   it('preserves business not-found messages instead of diagnosing a restart', async () => {

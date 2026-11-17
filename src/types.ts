@@ -93,6 +93,9 @@ export interface BiliProcessedMessageItem {
   sourceType: string;
   sourceTitle?: string;
   uri?: string;
+  /** Actual DSH session used by this message; never inferred from the source title. */
+  sessionId?: string;
+  sessionTitle?: string;
   user: {
     mid: string;
     uname: string;

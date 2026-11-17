@@ -15,7 +15,7 @@ beforeEach(async () => {
   poller = PollerService.getInstance({} as any);
   await poller.saveConfig({ targetWorkspacePath: dir, systemPrompt: 'persona one' });
 });
-afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); (PollerService as any).instance = null; await fs.rm(dir, { recursive: true, force: true }); });
+afterEach(async () => { await poller.flushRecentMessages(); vi.restoreAllMocks(); vi.unstubAllEnvs(); (PollerService as any).instance = null; await fs.rm(dir, { recursive: true, force: true }); });
 
 function harness(resumeCwd?: string) {
   const sections: any[] = [];
@@ -201,4 +201,69 @@ it('rejects resumed cwd mismatch before followup or workspace attachment', async
   expect(h.agents.create).not.toHaveBeenCalled();
   expect(h.followup).not.toHaveBeenCalled();
   expect(h.attachSession).not.toHaveBeenCalled();
+});
+
+
+function trackMessage(sourceId: string, userId = '123') {
+  const context = { ...message(), sourceId, userId };
+  poller.addRecentMessage({ id: `11_100_${sourceId}`, time: 1, sourceType: 'dynamic',
+    user: { mid: userId, uname: 'offline' }, message: 'hello', status: 'processing' });
+  return context;
+}
+
+it('records the actual session id and host title for queued messages sharing a session', async () => {
+  const h = harness();
+  const get = h.ctx.get;
+  h.ctx.get = (name: string) => name === 'sessionTitle' ? { get: () => ({ title: '宿主对话标题' }) } : get(name);
+  const contexts = [trackMessage('101'), trackMessage('102', '456')];
+  await Promise.all(contexts.map(context => h.bridge.handleInbound(context)));
+  const items = poller.getRecentMessages();
+  expect(items).toHaveLength(2);
+  expect(items[0].sessionId).toBe(items[1].sessionId);
+  expect(items.every(item => item.sessionTitle === '宿主对话标题' && item.sessionId)).toBe(true);
+  expect(h.agents.create).toHaveBeenCalledTimes(1);
+  h.bridge.dispose();
+});
+
+it.each(['missing', 'failed', 'blank'] as const)('keeps the actual session id when title lookup is %s', async mode => {
+  const h = harness();
+  const get = h.ctx.get;
+  h.ctx.get = (name: string) => name === 'sessionTitle' ? (mode === 'missing' ? undefined : {
+    get: () => { if (mode === 'failed') throw new Error('title unavailable'); return { title: ' ' }; },
+  }) : get(name);
+  await h.bridge.handleInbound(trackMessage('103'));
+  expect(poller.getRecentMessages()[0].sessionId).toBeTruthy();
+  expect(poller.getRecentMessages()[0].sessionTitle).toBeUndefined();
+  expect(h.followup).toHaveBeenCalledTimes(1);
+  h.bridge.dispose();
+});
+
+it('retains each archived generation in its own record and restores the current id across bridge restart', async () => {
+  const h = harness();
+  await h.bridge.handleInbound(trackMessage('104'));
+  const oldId = poller.getRecentMessages()[0].sessionId!;
+  h.registry.archivedSessionIds.push(oldId);
+  await h.bridge.handleInbound(trackMessage('105'));
+  const current = poller.getRecentMessages()[0];
+  expect(current.sessionId).not.toBe(oldId);
+  expect(poller.getRecentMessages().find(item => item.id.endsWith('_104'))!.sessionId).toBe(oldId);
+  const bound = h.bridge.findBySessionId(current.sessionId!)!;
+  h.bridge.dispose();
+  h.agents.resume.mockResolvedValue({ agent: bound.agent });
+  const resumed = new BilibiliAgentBridge(h.ctx);
+  h.followup.mockImplementation(() => {
+    queueMicrotask(() => (resumed as any).active.values().next().value?.finish());
+  });
+  await resumed.handleInbound(trackMessage('106'));
+  expect(poller.getRecentMessages()[0].sessionId).toBe(current.sessionId);
+  resumed.dispose();
+});
+
+it('does not invent a conversation when agent binding fails', async () => {
+  const h = harness();
+  h.agents.create.mockRejectedValue(new Error('create failed'));
+  await expect(h.bridge.handleInbound(trackMessage('107'))).rejects.toThrow('create failed');
+  expect(poller.getRecentMessages()[0].sessionId).toBeUndefined();
+  expect(poller.getRecentMessages()[0].sessionTitle).toBeUndefined();
+  h.bridge.dispose();
 });

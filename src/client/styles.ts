@@ -22,6 +22,10 @@ export const styles = `
 }
 .dsh-bili-settings > [role="tabpanel"][hidden] { display: none; }
 .dsh-bili-settings-content { display: flex; flex-direction: column; gap: 16px; }
+.dsh-bili-session-link, .dsh-bili-session-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-bili-session-link { border: 0; padding: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.dsh-bili-session-link:disabled { opacity: .5; cursor: not-allowed; }
+.dsh-bili-session-link:focus-visible { outline: 2px solid var(--dsw-alias-label-secondary, #666); outline-offset: 2px; }
 .dsh-bili-account-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .dsh-bili-account-summary > button { margin-left: auto; }
 .dsh-bili-settings .dsh-bili-account-panel { width: 100%; max-width: none; margin-bottom: 16px; box-sizing: border-box; font-family: inherit; animation: none; }

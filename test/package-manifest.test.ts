@@ -10,10 +10,11 @@ describe('package.json and DSH client bundle contract', () => {
 
   it('matches package.json name with the exported plugin name for DSH loader discovery', () => {
     // DSH dsh-client-modules expects the manifest name to strictly match the loader entry name.
-    // A scoped name mismatch (e.g. @seiuna/dsh-bilibili-plugin vs dsh-bilibili-plugin) causes DSH
+    // A mismatch between the patch specifier and manifest package name causes DSH
     // nearestPackage() to skip this package, resulting in the client UI not loading.
     expect(pkg.name).toBe(pluginName);
-    expect(pkg.name).toBe('dsh-bilibili-plugin');
+    expect(pkg.name).toBe('@seiuna/dsh-bilibili-plugin');
+    expect(readFileSync(join(root, 'cordis.patch.yml'), 'utf8')).toContain(`name: '${pkg.name}'`);
   });
 
   it('declares dsh.client with web platform and necessary injected modules', () => {
@@ -21,6 +22,7 @@ describe('package.json and DSH client bundle contract', () => {
     expect(pkg.dsh.client).toBeDefined();
     expect(pkg.dsh.client.platform).toBe('web');
     expect(pkg.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-settings');
+    expect(pkg.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-workspace');
     expect(pkg.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-conversation');
     expect(pkg.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-slots');
   });
