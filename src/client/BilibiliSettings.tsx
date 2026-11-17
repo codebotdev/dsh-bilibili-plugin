@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import { BilibiliAccountPanel } from './BilibiliAccountPanel.js';
 import { useBiliStore, biliStore } from './store.js';
 import {
@@ -53,7 +53,13 @@ export function BilibiliSettings() {
   const [recentClearing, setRecentClearing] = useState(false);
 
   // Recent Processed Messages State
-  const [showRecentPanel, setShowRecentPanel] = useState(false);
+  const [activeTab, setActiveTab] = useState<'config' | 'messages'>('config');
+  const tabId = useId();
+  const showRecentPanel = activeTab === 'messages';
+  const selectTab = (tab: 'config' | 'messages') => {
+    if (tab === 'messages') biliStore.close();
+    setActiveTab(tab);
+  };
   const [recentMessages, setRecentMessages] = useState<BiliProcessedMessageItem[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
 
@@ -320,6 +326,31 @@ export function BilibiliSettings() {
   const account = status.user ?? status.accountSummary;
   return (
     <section className="dsh-bili-settings" aria-label="B站设置">
+      <div className="dsh-bili-settings-tabs" role="tablist" aria-label="B站机器人设置分类">
+        {([['config', '配置'], ['messages', '消息记录']] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            id={`${tabId}-${tab}-tab`}
+            aria-controls={`${tabId}-${tab}-panel`}
+            aria-selected={activeTab === tab}
+            tabIndex={activeTab === tab ? 0 : -1}
+            onClick={() => selectTab(tab)}
+            onKeyDown={event => {
+              let next: 'config' | 'messages';
+              if (event.key === 'Home') next = 'config';
+              else if (event.key === 'End') next = 'messages';
+              else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') next = tab === 'config' ? 'messages' : 'config';
+              else return;
+              event.preventDefault();
+              selectTab(next);
+              event.currentTarget.ownerDocument.getElementById(`${tabId}-${next}-tab`)?.focus();
+            }}
+          >{label}</button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`${tabId}-config-panel`} aria-labelledby={`${tabId}-config-tab`} hidden={showRecentPanel} tabIndex={0}>
       <div className="dsh-bili-account-summary">
         {account?.face && <img src={getSafeAvatarUrl(account.face)} alt={account.uname} className="dsh-bili-avatar-mini" referrerPolicy="no-referrer" />}
         <div>
@@ -334,55 +365,8 @@ export function BilibiliSettings() {
       <BilibiliAccountPanel />
       <div className="dsh-bili-settings-content">
             <div className="dsh-bili-config">
-            {/* Header */}
             <div className="dsh-bili-config-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="dsh-bili-config-title">消息与 Agent 配置</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  type="button"
-                  style={{
-                    background: showRecentPanel ? 'rgba(251, 114, 153, 0.15)' : 'none',
-                    border: showRecentPanel ? '1px solid rgba(251, 114, 153, 0.4)' : '1px solid transparent',
-                    color: showRecentPanel ? '#FB7299' : 'var(--dsw-alias-label-secondary, #666666)',
-                    borderRadius: 4,
-                    padding: '2px 7px',
-                    cursor: 'pointer',
-                    fontSize: 11,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    transition: 'all 0.12s ease',
-                  }}
-                  onClick={() => {
-                    const next = !showRecentPanel;
-                    setShowRecentPanel(next);
-                  }}
-                  title={showRecentPanel ? '收起消息历史' : '展开最近处理的消息历史'}
-                >
-                  <span>消息历史</span>
-                  {(() => {
-                    const count = recentMessages.filter((m) => !m.user?.uname?.includes('测试')).length;
-                    return count > 0 ? (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          background: '#FB7299',
-                          color: '#ffffff',
-                          borderRadius: 8,
-                          padding: '0 4px',
-                          fontWeight: 600,
-                          lineHeight: '13px',
-                        }}
-                      >
-                        {count}
-                      </span>
-                    ) : null;
-                  })()}
-                </button>
-
-              </div>
+              <span className="dsh-bili-config-title">消息与 Agent 配置</span>
             </div>
 
             {/* In-Panel Friendly Feedback (替代所有原生 alert) */}
@@ -906,8 +890,10 @@ export function BilibiliSettings() {
             </div>
             </fieldset>}
             </div>
-
-            {/* 消息历史在设置页内展开 */}
+      </div>
+      </div>
+      <div role="tabpanel" id={`${tabId}-messages-panel`} aria-labelledby={`${tabId}-messages-tab`} hidden={!showRecentPanel} tabIndex={0}>
+            {/* Only the active messages tab fetches and polls records. */}
             {showRecentPanel && (
               <div className="dsh-bili-recent-panel">
                 <div className="dsh-bili-recent-header">
@@ -944,17 +930,6 @@ export function BilibiliSettings() {
                               清空
                             </button>
                           )}
-                          <button
-                            type="button"
-                            className="dsh-bili-recent-action-btn"
-                            onClick={() => {
-                              setShowRecentPanel(false);
-                            }}
-                            title="收起消息历史"
-                            style={{ fontSize: 13, lineHeight: 1, padding: '1px 5px' }}
-                          >
-                            ✕
-                          </button>
                         </div>
                       </>
                     );

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BilibiliSettings } from '../src/client/BilibiliSettings.js';
 import { biliStore } from '../src/client/store.js';
 import { apply } from '../src/client/index.js';
+import type { BiliProcessedMessageItem } from '../src/types.js';
 
 const account = { mid: 42, uname: '离线用户', face: '', level: 6, coins: 0, vipType: 0 };
 const config = {
@@ -18,12 +19,18 @@ let requests: AbortSignal[];
 let failConfig = false;
 let loggedIn = true;
 let saved = { ...config };
+let recentMessages: BiliProcessedMessageItem[] = [];
+const record: BiliProcessedMessageItem = {
+  id: 'offline-message', time: 1, sourceType: 'video',
+  user: { mid: '42', uname: '离线用户' }, message: '独立页签中的评论', status: 'replied', replyText: '离线回复',
+};
 const render = async () => { await act(async () => { view = create(<BilibiliSettings />); }); };
 const text = () => JSON.stringify(view!.toJSON());
 const button = (label: string) => view!.root.findAllByType('button').find(node => node.findAllByType('span').some(span => span.children.join('') === label) || node.children.join('') === label)!;
 
 beforeEach(() => {
   requests = [];
+  recentMessages = [];
   failConfig = false;
   loggedIn = true;
   saved = { ...config };
@@ -44,7 +51,8 @@ beforeEach(() => {
       }
       return json(saved);
     }
-    if (path === '/poller/recent-messages') return json({ success: true, list: [] });
+    if (path === '/poller/recent-messages') return json({ success: true, list: recentMessages });
+    if (path === '/poller/recent-messages/clear') { recentMessages = []; return json({ success: true }); }
     if (path === '/auth/qrcode/generate') return json({ error: '二维码服务不可用' }, 502);
     throw new Error(`未模拟的请求: ${path}`);
   });
@@ -53,6 +61,7 @@ beforeEach(() => {
 afterEach(async () => {
   if (view) await act(async () => view!.unmount());
   view = undefined;
+  vi.useRealTimers();
 });
 
 describe('B站设置页迁移', () => {
@@ -79,8 +88,9 @@ describe('B站设置页迁移', () => {
     const toggle = view!.root.findAllByType('input').find(node => node.props.type === 'checkbox')!;
     await act(async () => toggle.props.onChange());
     expect(saved.enableReply).toBe(false);
-    await act(async () => button('消息历史').props.onClick());
+    await act(async () => button('消息记录').props.onClick());
     expect(text()).toContain('最近处理的消息');
+    await act(async () => button('配置').props.onClick());
     await act(async () => button('管理账号').props.onClick());
     expect(text()).toContain('B站账号管理');
     await act(async () => view!.unmount());
@@ -89,6 +99,119 @@ describe('B站设置页迁移', () => {
     await render();
     expect(view!.root.findAllByType('input').find(node => node.props.type === 'checkbox')!.props.checked).toBe(false);
     expect(text()).not.toContain('B站账号管理');
+  });
+
+  it('switches separate accessible panels and preserves the unsaved persona draft', async () => {
+    recentMessages = [record];
+    await render();
+    const panels = () => view!.root.findAll(node => node.props.role === 'tabpanel');
+    expect(view!.root.findAll(node => node.props.role === 'tablist')).toHaveLength(1);
+    expect(button('配置').props['aria-selected']).toBe(true);
+    expect(panels().map(panel => panel.props.hidden)).toEqual([false, true]);
+    expect(button('消息历史')).toBeUndefined();
+    await act(async () => button('自定义人设').props.onClick());
+    await act(async () => view!.root.findByType('textarea').props.onChange({ target: { value: '尚未保存的人设' } }));
+    await act(async () => button('消息记录').props.onClick());
+    expect(panels().map(panel => panel.props.hidden)).toEqual([true, false]);
+    expect(button('消息记录').props['aria-selected']).toBe(true);
+    expect(panels()[1].props['aria-labelledby']).toBe(button('消息记录').props.id);
+    expect(button('消息记录').props['aria-controls']).toBe(panels()[1].props.id);
+    expect(text()).toContain(record.message);
+    expect(button('刷新')).toBeDefined();
+    expect(button('清空')).toBeDefined();
+    await act(async () => button('配置').props.onClick());
+    expect(view!.root.findByType('textarea').props.value).toBe('尚未保存的人设');
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  });
+
+  it('polls only the messages tab and cancels reads/timers when switching away or unmounting', async () => {
+    vi.useFakeTimers();
+    const reads = () => fetchMock.mock.calls.filter(([path]) => String(path).endsWith('/poller/recent-messages'));
+    await render();
+    await act(async () => vi.advanceTimersByTimeAsync(10000));
+    expect(reads()).toHaveLength(0);
+    await act(async () => button('消息记录').props.onClick());
+    expect(reads()).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(3500));
+    expect(reads()).toHaveLength(2);
+    const signal = reads().at(-1)![1]!.signal!;
+    await act(async () => button('配置').props.onClick());
+    expect(signal.aborted).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(10000));
+    expect(reads()).toHaveLength(2);
+    await act(async () => button('消息记录').props.onClick());
+    expect(reads()).toHaveLength(3);
+    await act(async () => view!.unmount());
+    view = undefined;
+    await act(async () => vi.advanceTimersByTimeAsync(10000));
+    expect(reads()).toHaveLength(3);
+  });
+
+  it('shows loading/error/empty records independently from configuration and allows refresh retry', async () => {
+    await render();
+    let resolve!: (value: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; }));
+    await act(async () => button('消息记录').props.onClick());
+    expect(text()).toContain('正在加载处理记录');
+    await act(async () => resolve(json({ error: '消息读取失败' }, 500)));
+    expect(text()).toContain('消息读取失败');
+    expect(button('消息记录').props['aria-selected']).toBe(true);
+    await act(async () => button('刷新').props.onClick());
+    expect(text()).not.toContain('消息读取失败');
+    expect(text()).toContain('暂无处理记录');
+  });
+
+  it('ignores a pending history response after switching away and reopening the messages tab', async () => {
+    await render();
+    let resolve!: (value: Response) => void;
+    let signal!: AbortSignal;
+    fetchMock.mockImplementationOnce((_input, init) => {
+      signal = init!.signal!;
+      return new Promise<Response>(done => { resolve = done; });
+    });
+    await act(async () => button('消息记录').props.onClick());
+    await act(async () => button('配置').props.onClick());
+    expect(signal.aborted).toBe(true);
+    recentMessages = [{ ...record, id: 'fresh', message: '重新进入后取得的记录' }];
+    await act(async () => button('消息记录').props.onClick());
+    await act(async () => resolve(json({ success: true, list: [record] })));
+    expect(text()).toContain('重新进入后取得的记录');
+    expect(text()).not.toContain(record.message);
+  });
+
+  it('preserves records on clear failure and prevents a stale refresh from undoing a successful clear', async () => {
+    recentMessages = [record];
+    await render();
+    await act(async () => button('消息记录').props.onClick());
+    fetchMock.mockImplementationOnce(async () => json({ error: '清空失败' }, 500));
+    await act(async () => button('清空').props.onClick());
+    expect(text()).toContain('清空失败');
+    expect(text()).toContain(record.message);
+    let resolve!: (value: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; }));
+    await act(async () => { void button('刷新').props.onClick(); });
+    await act(async () => button('清空').props.onClick());
+    await act(async () => resolve(json({ success: true, list: [record] })));
+    expect(text()).not.toContain(record.message);
+    expect(text()).toContain('暂无处理记录');
+    expect(button('消息记录').props['aria-selected']).toBe(true);
+  });
+
+  it('supports keyboard tab navigation and closes account actions when entering records', async () => {
+    await render();
+    await act(async () => button('管理账号').props.onClick());
+    expect(biliStore.getState().isOpen).toBe(true);
+    const focus = vi.fn();
+    const getElementById = vi.fn(() => ({ focus }));
+    const event = (key: string) => ({ key, preventDefault: vi.fn(), currentTarget: { ownerDocument: { getElementById } } });
+    await act(async () => button('配置').props.onKeyDown(event('ArrowRight')));
+    expect(button('消息记录').props['aria-selected']).toBe(true);
+    expect(biliStore.getState().isOpen).toBe(false);
+    expect(getElementById).toHaveBeenLastCalledWith(button('消息记录').props.id);
+    expect(focus).toHaveBeenCalledTimes(1);
+    await act(async () => button('消息记录').props.onKeyDown(event('Home')));
+    expect(button('配置').props['aria-selected']).toBe(true);
+    expect(button('消息记录').props.tabIndex).toBe(-1);
   });
 
   it('restores automatic binding as the default and persists explicit workspace selection', async () => {

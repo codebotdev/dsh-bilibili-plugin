@@ -2,6 +2,25 @@ export const CSS_TAG_ID = 'dsh-bilibili-plugin/styles';
 
 export const styles = `
 .dsh-bili-settings { width: 100%; min-width: 0; color: var(--dsw-alias-label-primary); font-family: inherit; }
+.dsh-bili-settings-tabs {
+  display: flex; gap: 4px; margin-bottom: 20px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #ddd);
+}
+.dsh-bili-settings-tabs [role="tab"] {
+  padding: 8px 14px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--dsw-alias-label-secondary, #666); font-size: 13px; cursor: pointer;
+}
+.dsh-bili-settings-tabs [role="tab"]:hover {
+  background: var(--dsw-alias-interactive-bg-hover, #eee);
+}
+.dsh-bili-settings-tabs [role="tab"][aria-selected="true"] {
+  background: var(--dsw-alias-bg-layer-2, #f5f5f5);
+  color: var(--dsw-alias-label-primary, #222); font-weight: 600;
+}
+.dsh-bili-settings-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-secondary, #666); outline-offset: 2px;
+}
+.dsh-bili-settings > [role="tabpanel"][hidden] { display: none; }
 .dsh-bili-settings-content { display: flex; flex-direction: column; gap: 16px; }
 .dsh-bili-account-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .dsh-bili-account-summary > button { margin-left: auto; }
