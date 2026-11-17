@@ -142,23 +142,15 @@ pnpm run build
 
 构建产物在 `lib/` 中，`index.js` 是宿主端插件，`client.js` 是 Web 界面模块。
 
-在目标 DSH profile 的 `package.json` 中添加本地依赖，路径换成你的仓库路径：
+构建后，在插件仓库目录运行下面的命令，将本地源码链接到目标 DSH profile（以 `web` 为例）：
 
-```json
-{
-  "dependencies": {
-    "@seiuna/dsh-bilibili-plugin": "link:D:/project/dsh-bilibili-plugin"
-  }
-}
+```bash
+dsh plugin --profile web add "@seiuna/dsh-bilibili-plugin@link:$PWD"
 ```
 
-再在该 profile 的 `cordis.patch.yml` 中添加：
+当前 DSH 会将插件注册到 profile 的 `dsh.profile.bundles`，启动时自动加载包内的 `cordis.patch.yml`。无需在启动命令中传入插件的 `--patch`；已有的该插件 `--patch` 参数应移除，避免重复加载。安装完成后完整重启 DSH。
 
-```yaml
-- insert:
-    - id: bilibili
-      name: '@seiuna/dsh-bilibili-plugin'
-```
+本地链接直接使用仓库中的构建产物。以后更新源码后重新构建即可，无需重复安装；依赖发生变化时先安装依赖。
 
 `pnpm run dev` 可以监听源码并重新构建。修改后端后需要重建并重启 DSH；只改前端时，重建后刷新页面即可。宿主是否自动重载，取决于当前 DSH 环境。
 

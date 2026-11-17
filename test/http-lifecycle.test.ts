@@ -10,7 +10,7 @@ function lifecycle() {
   const releaseTools = vi.fn();
   const releaseWorkspace = vi.fn();
   const releaseHandler = vi.fn();
-  const bridge = { handleInbound: vi.fn(async () => {}), dispose: vi.fn() };
+  const bridge = { handleInbound: vi.fn(async () => {}), dispose: vi.fn(), setAgentPresets: vi.fn(() => vi.fn()) };
   const manager = { ...f.manager, isUnlocked: true, initOnStartup: vi.fn(async () => {}) };
   const poller = {
     ...f.poller,
@@ -173,9 +173,24 @@ describe('injected plugin lifecycle (no real services or production apply)', () 
     pending.resolve(f.poller.getConfig());
     await vi.waitFor(() => expect(f.poller.start).toHaveBeenCalledOnce());
   });
+  it('attaches optional preset services in their injection scope and ignores late injection after disposal', () => {
+    const f = lifecycle(); f.start();
+    const callback = f.ctx.inject.mock.calls.find(([deps]) => deps.includes('agentPresets'))![1] as (ctx: unknown) => void;
+    const release = vi.fn();
+    f.bridge.setAgentPresets.mockReturnValue(release);
+    const registry = {};
+    let releaseScope!: () => void;
+    callback({ agentPresets: registry, effect: (fn: () => () => void) => { releaseScope = fn(); } });
+    expect(f.bridge.setAgentPresets).toHaveBeenCalledExactlyOnceWith(registry);
+    expect(releaseScope).toBe(release);
+    f.cleanup();
+    expect(release).toHaveBeenCalledOnce();
+    callback({ agentPresets: registry });
+    expect(f.bridge.setAgentPresets).toHaveBeenCalledTimes(1);
+  });
   it('owns an optional skill disposer and ignores injection after plugin disposal', () => {
     const f = lifecycle(); f.start();
-    const callback = f.ctx.inject.mock.calls[0][1] as (ctx: unknown) => void;
+    const callback = f.ctx.inject.mock.calls.find(([deps]) => deps.includes('skills'))![1] as (ctx: unknown) => void;
     const release = vi.fn(); let releaseScope!: () => void;
     const skillCtx = { skills: { register: vi.fn(() => release) }, effect: vi.fn((fn: () => () => void) => { releaseScope = fn(); }) };
     callback(skillCtx);

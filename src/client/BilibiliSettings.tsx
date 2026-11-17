@@ -1045,18 +1045,18 @@ export function BilibiliSettings({ onOpenSession }: BilibiliSettingsProps = {}) 
 
                         {(sessionTitle || sessionId) && (
                           <div className="dsh-bili-recent-source dsh-bili-recent-conversation">
-                            <span className={tagClass}>对话</span>
+                            <span className={tagClass}>会话</span>
                             {sessionId ? (
                               <button
                                 type="button"
                                 className="dsh-bili-recent-title-link dsh-bili-session-link"
                                 disabled={!onOpenSession}
-                                title={onOpenSession ? (sessionTitle || sessionId) : '当前 DSH 对话导航不可用'}
+                                title={onOpenSession ? (sessionTitle || sessionId) : '当前 DSH 会话导航不可用'}
                                 onClick={() => {
                                   try { onOpenSession?.(sessionId); }
-                                  catch { setRecentError('打开对话失败，请确认该对话仍可访问后重试'); }
+                                  catch { setRecentError('打开会话失败，请确认该会话仍可访问后重试'); }
                                 }}
-                              >{sessionTitle || '打开对话'}</button>
+                              >{sessionTitle || '打开会话'}</button>
                             ) : <span className="dsh-bili-session-title">{sessionTitle}</span>}
                           </div>
                         )}

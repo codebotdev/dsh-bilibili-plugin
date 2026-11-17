@@ -19,6 +19,21 @@ export class BiliModelUnavailableError extends Error {
   }
 }
 
+/** Public preset API verified against DSH 0.2.2-rc.1. Optional on preset-free hosts. */
+export interface BilibiliAgentPresetRegistry {
+  presetForSession(session: unknown): string | null;
+  resolve(id?: string): Promise<{ id: string; broken?: string }>;
+  mount(scope: Context, id?: string): Promise<{ id: string }>;
+  composedPreset(scope: Context): string | undefined;
+}
+
+export class BiliAgentPresetError extends Error {
+  constructor(message = 'B站 Agent 预设装配失败，停止投递', cause?: unknown) {
+    super(message, { cause });
+    this.name = 'BiliAgentPresetError';
+  }
+}
+
 export interface BiliAgentSessionRecord {
   sessionKey: string;
   sessionId: string;
@@ -61,9 +76,64 @@ export class BilibiliAgentBridge {
   private readonly lifecycle = new AbortController();
   private pending = 0;
   private off?: () => void;
+  private presetRegistry?: BilibiliAgentPresetRegistry;
+  private presetRegistryToken?: symbol;
+
+  setAgentPresets(registry: BilibiliAgentPresetRegistry): () => void {
+    if (this.disposed) return () => {};
+    const token = Symbol('bilibili-agent-presets');
+    this.presetRegistry = registry;
+    this.presetRegistryToken = token;
+    return () => {
+      if (this.presetRegistryToken === token) {
+        this.presetRegistry = undefined;
+        this.presetRegistryToken = undefined;
+      }
+    };
+  }
+
+  private async setupAgent(agentCtx: Context, agent: BiliAgentSessionRecord['agent']): Promise<void> {
+    if (this.disposed) throw new Error('Bilibili bridge disposed');
+    const presets = this.presetRegistry;
+    if (!presets) {
+      this.installPersona(agentCtx, agent);
+      return; // Preset-free hosts retain their globally registered tools.
+    }
+    const assertActive = () => {
+      if (this.disposed || this.presetRegistry !== presets) throw new BiliAgentPresetError('B站 Agent 预设服务已卸载，停止投递');
+    };
+    try {
+      const selected = presets.presetForSession(agent.session);
+      const preset = await presets.resolve(selected ?? undefined);
+      assertActive();
+      if (!preset.id?.trim() || preset.broken !== undefined) throw new BiliAgentPresetError('B站 Agent 预设不可用，停止投递');
+      const mounted = await presets.mount(agentCtx, preset.id);
+      assertActive();
+      if (mounted.id !== preset.id || presets.composedPreset(agentCtx) !== preset.id) throw new BiliAgentPresetError('B站 Agent 预设装配结果不一致，停止投递');
+      // Mount the preset before shadowing only its deployment persona.
+      this.installPersona(agentCtx, agent);
+      if (selected !== preset.id) agent.session.append('agent-preset/selected', { agentPreset: preset.id });
+    } catch (error) {
+      if (error instanceof BiliAgentPresetError) throw error;
+      throw new BiliAgentPresetError(undefined, error);
+    }
+  }
+
+  private assertLivePreset(agent: BiliAgentSessionRecord['agent']): void {
+    const presets = this.presetRegistry;
+    if (!presets) return;
+    const composed = presets.composedPreset(agent.ctx);
+    const selected = presets.presetForSession(agent.session);
+    // mount/recompose are not a migration API for a running, nonblank Agent.
+    if (!composed || (selected !== null && selected !== composed)) {
+      throw new BiliAgentPresetError('已有 B站 Agent 未正确装配预设，请完整重启 DSH 后恢复此会话');
+    }
+  }
 
   dispose(): void {
     this.disposed = true;
+    this.presetRegistry = undefined;
+    this.presetRegistryToken = undefined;
     this.lifecycle.abort();
     this.off?.();
     for (const run of this.active.values()) run.fail(new Error('Bilibili bridge disposed'));
@@ -176,6 +246,7 @@ export class BilibiliAgentBridge {
 
     const existing = this.sessions.get(sessionKey);
     if (existing && !archived.has(existing.sessionId)) {
+      this.assertLivePreset(existing.agent);
       await this.validateCwd(existing.agent, targetCwd);
       await PollerService.getInstance().attachSessionToWorkspace(existing.sessionId, targetCwd);
       existing.lastActivity = Date.now();
@@ -193,7 +264,7 @@ export class BilibiliAgentBridge {
     }
 
     await PollerService.getInstance().getSystemPrompt();
-    const setupHook = async (agentCtx: any, scopedAgent: any) => this.installPersona(agentCtx, scopedAgent);
+    const setupHook = async (agentCtx: Context, scopedAgent: BiliAgentSessionRecord['agent']) => this.setupAgent(agentCtx, scopedAgent);
 
     let agent = agents.get(sessionId);
     if (agent) {
@@ -208,7 +279,8 @@ export class BilibiliAgentBridge {
         });
         agent = resumed.agent;
         logger.info(`恢复持久化 Agent: key=${sessionKey} sessionId=${sessionId.slice(0, 8)} model=${route.provider}/${route.model}`);
-      } catch {
+      } catch (error) {
+        if (error instanceof BiliAgentPresetError || this.disposed) throw error;
         // 创建全新会话（显式绑定目标工作区 cwd 与 setup 提示词钩子）
         const created = await agents.create({
           sessionId,
@@ -234,6 +306,7 @@ export class BilibiliAgentBridge {
       }
     }
 
+    this.assertLivePreset(agent);
     await this.validateCwd(agent, targetCwd);
     this.installPersona(agent.ctx, agent);
     await PollerService.getInstance().attachSessionToWorkspace(sessionId, targetCwd);

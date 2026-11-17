@@ -227,11 +227,12 @@ describe('B站设置页迁移', () => {
     await act(async () => button('消息记录').props.onClick());
     const rows = view!.root.findAll(node => node.props.className?.split(' ').includes('dsh-bili-recent-conversation'));
     expect(rows).toHaveLength(3);
+    expect(rows.every(row => row.findAllByType('span')[0].children.join('') === '会话')).toBe(true);
     expect(rows[1].findAllByType('button')).toHaveLength(0);
     expect(rows[1].findAllByType('span').at(-1)!.children).toEqual(['只有标题']);
     await act(async () => button('真实对话标题').props.onClick());
     expect(open).toHaveBeenLastCalledWith('session-both');
-    await act(async () => button('打开对话').props.onClick());
+    await act(async () => button('打开会话').props.onClick());
     expect(open).toHaveBeenLastCalledWith('session-id-only');
   });
 
@@ -267,7 +268,7 @@ describe('B站设置页迁移', () => {
     await act(async () => button('消息记录').props.onClick());
     await act(async () => button('等待导航的会话').props.onClick());
     expect(close).not.toHaveBeenCalled();
-    expect(text()).toContain('打开对话失败');
+    expect(text()).toContain('打开会话失败');
     ready({ uiWorkspace: { openSession }, effect: (callback: () => () => void) => { release = callback(); } });
     await act(async () => button('等待导航的会话').props.onClick());
     expect(openSession).toHaveBeenCalledExactlyOnceWith('session-late');
@@ -287,7 +288,7 @@ describe('B站设置页迁移', () => {
     await act(async () => { view = create(<BilibiliSettings onOpenSession={() => { throw new Error('unavailable'); }} />); });
     await act(async () => button('消息记录').props.onClick());
     await act(async () => button('失效会话').props.onClick());
-    expect(text()).toContain('打开对话失败');
+    expect(text()).toContain('打开会话失败');
     expect(text()).toContain(record.message);
     expect(button('消息记录').props['aria-selected']).toBe(true);
   });

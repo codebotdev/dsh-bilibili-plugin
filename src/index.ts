@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery';
 import { BilibiliClientManager } from './client-manager.js';
 import { registerBilibiliTools } from './tools.js';
 import { PollerService } from './poller-service.js';
-import { BilibiliAgentBridge } from './agent-bridge.js';
+import { BilibiliAgentBridge, type BilibiliAgentPresetRegistry } from './agent-bridge.js';
 import { getLogger, setLoggerContext } from './command/logger.js';
 import { registerBilibiliRoutes } from './http/routes.js';
 import type { HttpManager, HttpPoller, HttpLlmService } from './http/contracts.js';
@@ -28,7 +28,7 @@ export const Config = z.object({
 export interface PluginServices {
   manager: HttpManager & Pick<BilibiliClientManager, 'initOnStartup' | 'isUnlocked'>;
   poller: HttpPoller & Pick<PollerService, 'claimRuntime' | 'start' | 'stop' | 'loadConfig' | 'setWorkspaceRegistry' | 'setDshHandler'>;
-  createBridge(): Pick<BilibiliAgentBridge, 'handleInbound' | 'dispose'>;
+  createBridge(): Pick<BilibiliAgentBridge, 'handleInbound' | 'dispose' | 'setAgentPresets'>;
   registerTools(): () => void;
 }
 function createServices(ctx: Context): PluginServices {
@@ -77,6 +77,15 @@ export function apply(
     releases.push(poller.setWorkspaceRegistry(ctx.get('workspaceRegistry')));
     const bridge = createBridge();
     releases.push(() => bridge.dispose());
+    ctx.inject(['agentPresets'], (presetCtx: {
+      agentPresets: BilibiliAgentPresetRegistry;
+      effect(callback: () => (() => void), label?: string): unknown;
+    }) => {
+      if (disposed) return;
+      const release = bridge.setAgentPresets(presetCtx.agentPresets);
+      releases.push(release);
+      presetCtx.effect(() => release, 'bilibili: agent presets');
+    });
     releases.push(poller.setDshHandler(async sessionCtx => {
       if (!disposed) await bridge.handleInbound(sessionCtx);
     }));
