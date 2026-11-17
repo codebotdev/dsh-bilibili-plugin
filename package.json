@@ -1,6 +1,6 @@
 {
-  "name": "dsh-bilibili-plugin",
-  "version": "1.0.5",
+  "name": "@seiuna/dsh-bilibili-plugin",
+  "version": "1.0.6",
   "description": "Bilibili plugin for DeepSeek Harness (DSH)",
   "type": "module",
   "main": "lib/index.js",
