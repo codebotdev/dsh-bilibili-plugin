@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { errorMessage } from './request.js';
 import { startQrcodeSession } from './qrcode-session.js';
 import { createLatestRequest } from './async.js';
@@ -14,7 +13,7 @@ import type { BiliUserInfo } from '../types.js';
 
 type ViewMode = 'auto' | 'qrcode' | 'setup_pwd' | 'unlock';
 
-export function BilibiliAuthOverlay() {
+export function BilibiliAccountPanel() {
   const { isOpen, status, error: authError } = useBiliStore();
 
   const [viewMode, setViewMode] = useState<ViewMode>('auto');
@@ -123,7 +122,7 @@ export function BilibiliAuthOverlay() {
     };
   }, [isOpen]);
 
-  if (!isOpen || typeof document === 'undefined') return null;
+  if (!isOpen) return null;
 
   const handleClose = () => {
     stopQrcode();
@@ -218,15 +217,14 @@ export function BilibiliAuthOverlay() {
     }
   };
 
-  return createPortal(
-    <div className="dsh-bili-overlay-mask" onClick={handleClose}>
-      <div className="dsh-bili-modal-card" style={{ maxHeight: 'calc(100dvh - 32px)' }} onClick={(e) => e.stopPropagation()}>
+  return (
+      <div className="dsh-bili-modal-card dsh-bili-account-panel" role="region" aria-label="B站账号管理">
         {/* Header */}
         <div className="dsh-bili-modal-header">
           <div className="dsh-bili-modal-title">
             <span>哔哩哔哩账号空间</span>
           </div>
-          <button className="dsh-bili-modal-close" onClick={handleClose}>
+          <button type="button" className="dsh-bili-modal-close" aria-label="收起账号管理" onClick={handleClose}>
             ✕
           </button>
         </div>
@@ -474,7 +472,5 @@ export function BilibiliAuthOverlay() {
           )}
         </div>
       </div>
-    </div>,
-    document.body,
   );
 }

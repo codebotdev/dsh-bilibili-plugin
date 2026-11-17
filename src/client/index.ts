@@ -1,37 +1,16 @@
-import { BilibiliHeaderPill } from './BilibiliHeaderPill.js';
-import { BilibiliAuthOverlay } from './BilibiliAuthOverlay.js';
+import { BilibiliSettings } from './BilibiliSettings.js';
 import { installStyles } from './styles.js';
+import { installSessionLogo } from './session-logo.js';
 
-export const NS = 'bilibili';
-export const inject = ['slots', 'locale'];
+export const inject = ['slots'];
 
 export function apply(ctx: any): void {
-  // 1. 安装组件样式
   ctx.effect(() => installStyles(), 'bilibili: styles');
-
-  // 2. 注入顶部会话栏操作区胶囊 (Header Pill)
-  ctx.slots.inject('conversation.session.header.actions', () =>
+  ctx.effect(() => installSessionLogo(), 'bilibili: session logo');
+  ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
-      {
-        name: 'conversation.session.header.actions',
-        id: 'bilibili-status-pill',
-        order: 12,
-        locale: NS,
-      },
-      BilibiliHeaderPill,
-    ),
-  );
-
-  // 3. 注入全局抽屉/浮层 (Overlay Modal)
-  ctx.slots.inject('shell.overlay', () =>
-    ctx.slots.register(
-      {
-        name: 'shell.overlay',
-        id: 'bilibili-auth-overlay',
-        order: 12,
-        locale: NS,
-      },
-      BilibiliAuthOverlay,
+      { name: 'settings.section', id: 'bilibili', order: 40, label: 'B站机器人' },
+      BilibiliSettings,
     ),
   );
 }

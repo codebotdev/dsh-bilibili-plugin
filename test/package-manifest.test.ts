@@ -20,8 +20,8 @@ describe('package.json and DSH client bundle contract', () => {
     expect(pkg.dsh).toBeDefined();
     expect(pkg.dsh.client).toBeDefined();
     expect(pkg.dsh.client.platform).toBe('web');
-    expect(pkg.dsh.client.inject).toContain('@deepseek-ai/dsh-client-locale');
-    expect(pkg.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-conversation');
+    expect(pkg.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-settings');
+    expect(pkg.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-ui-conversation');
     expect(pkg.dsh.client.inject).toContain('@deepseek-ai/dsh-client-ui-slots');
   });
 

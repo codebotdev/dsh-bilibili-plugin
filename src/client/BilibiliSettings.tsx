@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { BilibiliAccountPanel } from './BilibiliAccountPanel.js';
 import { useBiliStore, biliStore } from './store.js';
 import {
   getSafeAvatarUrl,
@@ -36,13 +36,9 @@ function formatRelativeTime(ts: number): string {
   return `${m}月${day}日 ${h}:${min}`;
 }
 
-export function BilibiliHeaderPill() {
+export function BilibiliSettings() {
   const { status, error: authError, isLoading: authLoading } = useBiliStore();
 
-  const pillRef = useRef<HTMLDivElement>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState({ top: 40, left: 10 });
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const configReads = useRef(createLatestRequest());
   const recentReads = useRef(createLatestRequest());
   const searches = useRef(createLatestRequest());
@@ -73,7 +69,6 @@ export function BilibiliHeaderPill() {
   const [modelBusy, setModelBusy] = useState(false);
   const [modelError, setModelError] = useState('');
   useEffect(() => {
-    if (!isDropdownOpen) return;
     const controller = new AbortController();
     setModelBusy(true);
     setModelError('');
@@ -82,7 +77,7 @@ export function BilibiliHeaderPill() {
       .catch(error => { if (!controller.signal.aborted) setModelError(errorMessage(error)); })
       .finally(() => { if (!controller.signal.aborted) setModelBusy(false); });
     return () => { controller.abort(); };
-  }, [isDropdownOpen]);
+  }, []);
 
   // Workspaces State
   const [workspaces, setWorkspaces] = useState<BiliWorkspaceItem[]>([]);
@@ -99,22 +94,6 @@ export function BilibiliHeaderPill() {
   // Friendly In-Panel Feedback (No alerts)
   const [panelError, setPanelError] = useState('');
   const [panelNotice, setPanelNotice] = useState('');
-
-  const updatePosition = (showRecent = showRecentPanel) => {
-    if (pillRef.current) {
-      const rect = pillRef.current.getBoundingClientRect();
-      const totalWidth = showRecent ? (320 + 12 + 350) : 320;
-      let left = Math.round(rect.left);
-      // 如果按左对齐向右展开会超出屏幕右侧，则向左偏移
-      if (left + totalWidth > window.innerWidth - 10) {
-        left = Math.max(10, window.innerWidth - totalWidth - 10);
-      }
-      setDropdownPos({
-        top: Math.round(rect.bottom + 6),
-        left: Math.max(10, left),
-      });
-    }
-  };
 
   const loadRecent = async () => {
     if (clearingRecent.current) return;
@@ -191,7 +170,7 @@ export function BilibiliHeaderPill() {
     void biliStore.refresh();
     return () => {
       mounted.current = false;
-      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      biliStore.close();
       configReads.current.cancel();
       recentReads.current.cancel();
       searches.current.cancel();
@@ -200,7 +179,6 @@ export function BilibiliHeaderPill() {
   }, []);
 
   useEffect(() => {
-    if (!isDropdownOpen) return;
     void loadConfig();
     const controller = new AbortController();
     fetchWorkspaces(controller.signal)
@@ -212,38 +190,16 @@ export function BilibiliHeaderPill() {
       searches.current.cancel();
       followingReads.current.cancel();
     };
-  }, [isDropdownOpen]);
+  }, []);
 
   useEffect(() => {
-    if (!isDropdownOpen) return;
+    if (!showRecentPanel) return;
     const stop = startSerialPolling(async () => {
       await loadRecent();
       return showRecentPanel;
     }, error => setRecentError(errorMessage(error)), 3500);
     return () => { stop(); recentReads.current.cancel(); };
-  }, [isDropdownOpen, showRecentPanel]);
-
-  const handleMouseEnter = () => {
-    if (hoverTimerRef.current) {
-      clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = null;
-    }
-    updatePosition(showRecentPanel);
-    setIsDropdownOpen(true);
-  };
-
-  const handleMouseLeave = () => {
-    hoverTimerRef.current = setTimeout(() => {
-      setIsDropdownOpen(false);
-      setShowRecentPanel(false);
-      setShowFollowings(false);
-      setSearching(false);
-      setLoadingFollowings(false);
-      setSearchResult(null);
-      setPanelError('');
-      setPanelNotice('');
-    }, 350);
-  };
+  }, [showRecentPanel]);
 
   const handleToggle = async (key: 'enableReply' | 'enableAt' | 'enableWhitelist' | 'autoLikeOnReply') => {
     if (!config) return;
@@ -361,81 +317,27 @@ export function BilibiliHeaderPill() {
     }
   };
 
+  const account = status.user ?? status.accountSummary;
   return (
-    <div
-      ref={pillRef}
-      className="dsh-bili-pill-wrapper"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      {/* 胶囊主体 */}
-      {status.isUnlocked && status.user ? (
-        <div
-          className="dsh-bili-pill dsh-bili-pill-authed"
-          onClick={() => biliStore.open()}
-          title={`已登录 B 站: ${status.user.uname} (UID: ${status.user.mid})`}
-        >
-          {status.user.face && (
-            <img
-              src={getSafeAvatarUrl(status.user.face)}
-              alt={status.user.uname}
-              className="dsh-bili-avatar-mini"
-              referrerPolicy="no-referrer"
-            />
-          )}
-          <span style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {status.user.uname}
-          </span>
-          <span style={{ fontSize: 10, color: '#FB7299', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-            Lv.{status.user.level}
-          </span>
+    <section className="dsh-bili-settings" aria-label="B站设置">
+      <div className="dsh-bili-account-summary">
+        {account?.face && <img src={getSafeAvatarUrl(account.face)} alt={account.uname} className="dsh-bili-avatar-mini" referrerPolicy="no-referrer" />}
+        <div>
+          <strong>{account?.uname || 'B站账号'}</strong>
+          {status.user && <span> · Lv.{status.user.level}</span>}
+          <div className="dsh-bili-sub-text">{status.isUnlocked ? '已登录' : status.hasVault ? '账号已锁定' : '尚未登录'}</div>
         </div>
-      ) : status.hasVault && !status.isUnlocked ? (
-        <div
-          className="dsh-bili-pill dsh-bili-pill-locked"
-          onClick={() => biliStore.open()}
-          title="B站凭据已加锁，点击输入密码解密"
-        >
-          {status.accountSummary?.face && (
-            <img
-              src={getSafeAvatarUrl(status.accountSummary.face)}
-              alt="avatar"
-              className="dsh-bili-avatar-mini"
-              referrerPolicy="no-referrer"
-            />
-          )}
-          <span>解锁 B站 ({status.accountSummary?.uname || '账号'})</span>
-        </div>
-      ) : (
-        <div
-          className="dsh-bili-pill dsh-bili-pill-unlogged"
-          onClick={() => biliStore.open()}
-          title="点击扫码登录 Bilibili 账号"
-        >
-          <span>登录 B站</span>
-        </div>
-      )}
-
-      {/* 彻底置顶的悬浮并排面板 (Fixed + createPortal 到 body) */}
-      {isDropdownOpen &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            className="dsh-bili-portal-wrap"
-            style={{
-              top: dropdownPos.top,
-              left: dropdownPos.left,
-            }}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* 左侧：B 站消息分发控制面板 */}
-            <div className="dsh-bili-dropdown">
+        <button type="button" className="dsh-bili-mini-btn" disabled={authLoading} onClick={() => biliStore.open()}>
+          {status.isUnlocked ? '管理账号' : status.hasVault ? '解锁账号' : '扫码登录'}
+        </button>
+      </div>
+      <BilibiliAccountPanel />
+      <div className="dsh-bili-settings-content">
+            <div className="dsh-bili-config">
             {/* Header */}
-            <div className="dsh-bili-dropdown-header">
+            <div className="dsh-bili-config-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="dsh-bili-dropdown-title">设置</span>
+                <span className="dsh-bili-config-title">消息与 Agent 配置</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
@@ -456,7 +358,6 @@ export function BilibiliHeaderPill() {
                   onClick={() => {
                     const next = !showRecentPanel;
                     setShowRecentPanel(next);
-                    updatePosition(next);
                   }}
                   title={showRecentPanel ? '收起消息历史' : '展开最近处理的消息历史'}
                 >
@@ -480,19 +381,7 @@ export function BilibiliHeaderPill() {
                     ) : null;
                   })()}
                 </button>
-                <button
-                  type="button"
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#FB7299',
-                    cursor: 'pointer',
-                    fontSize: 11,
-                  }}
-                  onClick={() => biliStore.open()}
-                >
-                  账号管理 &gt;
-                </button>
+
               </div>
             </div>
 
@@ -532,8 +421,8 @@ export function BilibiliHeaderPill() {
             {configBusy && <div role="status">正在保存配置…</div>}
             {!config && !configLoading && <button type="button" className="dsh-bili-mini-btn" onClick={loadConfig}>重试加载配置</button>}
             {config && <fieldset disabled={configBusy || configLoading} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-            <div className="dsh-bili-dropdown-section">
-              <span className="dsh-bili-dropdown-label">默认模型</span>
+            <div className="dsh-bili-config-section">
+              <span className="dsh-bili-config-label">默认模型</span>
               <select className="dsh-bili-mini-input" disabled={modelBusy}
                 value={config.modelSelection ? JSON.stringify([config.modelSelection.provider, config.modelSelection.model]) : ''}
                 onChange={async e => {
@@ -624,9 +513,9 @@ export function BilibiliHeaderPill() {
               };
 
               return (
-                <div className="dsh-bili-dropdown-section">
+                <div className="dsh-bili-config-section">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="dsh-bili-dropdown-label">思考强度 (Reasoning Effort)</span>
+                    <span className="dsh-bili-config-label">思考强度 (Reasoning Effort)</span>
                     {config.modelSelection.reasoningEffort && (
                       <span style={{ fontSize: 10, color: '#FB7299', fontWeight: 600 }}>
                         {config.modelSelection.reasoningEffort}
@@ -654,8 +543,8 @@ export function BilibiliHeaderPill() {
             })()}
 
             {/* 指定工作区设定板块 */}
-            <div className="dsh-bili-dropdown-section">
-              <span className="dsh-bili-dropdown-label">指定归属工作区</span>
+            <div className="dsh-bili-config-section">
+              <span className="dsh-bili-config-label">指定归属工作区</span>
               <select
                 className="dsh-bili-mini-input"
                 style={{ cursor: 'pointer', fontSize: 11 }}
@@ -680,8 +569,8 @@ export function BilibiliHeaderPill() {
             </div>
 
             {/* 评论图片下载安全限制 */}
-            <div className="dsh-bili-dropdown-section">
-              <span className="dsh-bili-dropdown-label">评论图片下载限制</span>
+            <div className="dsh-bili-config-section">
+              <span className="dsh-bili-config-label">评论图片下载限制</span>
               <div className="dsh-bili-image-limits-grid">
                 <label className="dsh-bili-image-limit-field" title="图片下载超时（秒）">
                   <span>超时（秒）</span>
@@ -732,8 +621,8 @@ export function BilibiliHeaderPill() {
             </div>
 
             {/* 1. 消息接收开关 */}
-            <div className="dsh-bili-dropdown-section">
-              <span className="dsh-bili-dropdown-label">监听设置</span>
+            <div className="dsh-bili-config-section">
+              <span className="dsh-bili-config-label">监听设置</span>
               <label className="dsh-bili-check-row">
                 <input
                   type="checkbox"
@@ -764,9 +653,9 @@ export function BilibiliHeaderPill() {
             </div>
 
             {/* 2. 白名单控制 */}
-            <div className="dsh-bili-dropdown-section" style={{ marginBottom: 4 }}>
+            <div className="dsh-bili-config-section" style={{ marginBottom: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="dsh-bili-dropdown-label">白名单控制</span>
+                <span className="dsh-bili-config-label">白名单控制</span>
                 {status.isUnlocked && (
                   <button
                     type="button"
@@ -958,9 +847,9 @@ export function BilibiliHeaderPill() {
             </div>
 
             {/* 3. AI 人设与回复规范定制 */}
-            <div className="dsh-bili-dropdown-section" style={{ marginTop: 8, marginBottom: 0 }}>
+            <div className="dsh-bili-config-section" style={{ marginTop: 8, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="dsh-bili-dropdown-label">AI 回复人设</span>
+                <span className="dsh-bili-config-label">AI 回复人设</span>
                 <button
                   type="button"
                   style={{
@@ -1018,7 +907,7 @@ export function BilibiliHeaderPill() {
             </fieldset>}
             </div>
 
-            {/* 右侧：最近处理的消息悬浮框（仅在用户点击“消息历史”按钮时展开显示） */}
+            {/* 消息历史在设置页内展开 */}
             {showRecentPanel && (
               <div className="dsh-bili-recent-panel">
                 <div className="dsh-bili-recent-header">
@@ -1060,7 +949,6 @@ export function BilibiliHeaderPill() {
                             className="dsh-bili-recent-action-btn"
                             onClick={() => {
                               setShowRecentPanel(false);
-                              updatePosition(false);
                             }}
                             title="收起消息历史"
                             style={{ fontSize: 13, lineHeight: 1, padding: '1px 5px' }}
@@ -1257,9 +1145,7 @@ export function BilibiliHeaderPill() {
               })()}
             </div>
             )}
-          </div>,
-          document.body,
-        )}
-    </div>
+      </div>
+    </section>
   );
 }
