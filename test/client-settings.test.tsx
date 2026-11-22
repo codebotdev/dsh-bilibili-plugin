@@ -214,6 +214,82 @@ describe('B站设置页迁移', () => {
     expect(button('消息记录').props.tabIndex).toBe(-1);
   });
 
+  it('keeps video links unchanged and makes only valid user-message content link to its comment', async () => {
+    const uri = 'https://www.bilibili.com/video/BV1YpH166Ekf/';
+    recentMessages = [
+      { ...record, id: '1_117399760143200_320525339873', uri },
+      { ...record, id: 'legacy', uri },
+      { ...record, id: '1_117399760143200_320525339874', uri, message: '', images: ['https://i0.hdslb.com/comment.png'] },
+    ];
+    await render();
+    await act(async () => button('消息记录').props.onClick());
+    const links = view!.root.findAllByType('a');
+    expect(links.filter(link => link.props.className === 'dsh-bili-recent-title-link').map(link => link.props.href))
+      .toEqual([uri, uri, uri]);
+    const messages = links.filter(link => link.props.className === 'dsh-bili-comment-link');
+    expect(messages.map(link => link.props.href)).toEqual([`${uri}#reply320525339873`, `${uri}#reply320525339874`]);
+    expect(messages[0].children).toEqual([record.message]);
+    expect(messages[1].children).toEqual(['[纯图片评论]']);
+    expect(messages.every(link => link.props.target === '_blank')).toBe(true);
+  });
+
+  it('links opus user messages even when the source label is 评论', async () => {
+    const uri = 'https://www.bilibili.com/opus/1273148346619396113';
+    recentMessages = [
+      { ...record, id: '11_123_321022739665', sourceType: '评论', uri },
+      { ...record, id: 'legacy', sourceType: '评论', uri },
+    ];
+    await render();
+    await act(async () => button('消息记录').props.onClick());
+    const links = view!.root.findAllByType('a');
+    expect(links.filter(link => link.props.className === 'dsh-bili-recent-title-link').map(link => link.props.href)).toEqual([uri, uri]);
+    expect(links.filter(link => link.props.className === 'dsh-bili-comment-link').map(link => link.props.href)).toEqual([`${uri}#reply321022739665`]);
+  });
+
+  it('shows original content links separately from parent-comment summaries, including ignored and legacy records', async () => {
+    const video = 'https://www.bilibili.com/video/BV1BKpP6NELo';
+    const opus = 'https://www.bilibili.com/opus/1273148346619396113';
+    const dynamic = 'https://t.bilibili.com/123';
+    recentMessages = [
+      { ...record, id: '1_117394844551842_324730875312', sourceType: '评论', sourceTitle: '上一级评论正文', uri: video, status: 'ignored', error: '非白名单用户' },
+      { ...record, id: '11_123_321022739665', sourceType: '评论', sourceTitle: '图文里的评论正文', uri: opus },
+      { ...record, id: 'legacy', sourceType: '评论', sourceTitle: '动态里的评论正文', uri: dynamic },
+      { ...record, id: 'no-link', sourceType: '评论', sourceTitle: '没有来源地址' },
+    ];
+    await render();
+    await act(async () => button('消息记录').props.onClick());
+    const links = view!.root.findAllByType('a').filter(link => link.props.className === 'dsh-bili-recent-title-link');
+    expect(links.map(link => link.props.href)).toEqual([video, opus, dynamic]);
+    expect(links.map(link => link.children.join(''))).toEqual([video, opus, dynamic]);
+    expect(text()).toContain('上一级评论正文');
+    expect(text()).toContain('没有来源地址');
+    const sourceRows = view!.root.findAll(node => node.props.className === 'dsh-bili-recent-source');
+    const contentTags = sourceRows.filter(row => row.findAllByType('a').length > 0)
+      .map(row => row.findAllByType('span')[0]);
+    expect(contentTags.map(tag => tag.children.join(''))).toEqual(['视频', '动态', '动态']);
+    expect(contentTags.map(tag => tag.props.className)).toEqual([
+      'dsh-bili-recent-tag',
+      'dsh-bili-recent-tag dsh-bili-recent-tag-dynamic',
+      'dsh-bili-recent-tag dsh-bili-recent-tag-dynamic',
+    ]);
+  });
+
+  it.each(['video', 'dynamic', '评论'])('uses gray for every tag on skipped %s records while retaining labels and links', async (sourceType) => {
+    recentMessages = [{
+      ...record, id: '1_123_456', sourceType, sourceTitle: '来源摘要',
+      uri: 'https://www.bilibili.com/video/BV123', status: 'ignored',
+      sessionId: 'existing-session', sessionTitle: '已有会话',
+    }];
+    await render();
+    await act(async () => button('消息记录').props.onClick());
+    const tags = view!.root.findAll(node => typeof node.props.className === 'string'
+      && node.props.className.split(' ').includes('dsh-bili-recent-tag'));
+    expect(tags.length).toBe(sourceType === '评论' ? 3 : 2);
+    expect(tags.every(tag => tag.props.className === 'dsh-bili-recent-tag')).toBe(true);
+    expect(tags.map(tag => tag.children.join(''))).toContain('会话');
+    expect(view!.root.findAllByType('a').some(link => link.props.href === recentMessages[0].uri)).toBe(true);
+  });
+
   it('shows conversation metadata only when there is a title or id, with honest title-only/id-only fallbacks', async () => {
     recentMessages = [
       { ...record, id: 'both', sessionId: 'session-both', sessionTitle: '真实对话标题' },

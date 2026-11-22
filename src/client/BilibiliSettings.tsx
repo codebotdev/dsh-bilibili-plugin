@@ -18,6 +18,8 @@ import type { BiliPollerConfig, BiliProcessedMessageItem, BiliWhitelistUser, Bil
 import type { ModelGroup, PollerConfigResponse } from './contracts.js';
 import { errorMessage } from './request.js';
 import { createLatestRequest, startSerialPolling } from './async.js';
+import { commentLink } from './comment-link.js';
+import { commentSourceType } from './source-type.js';
 
 function formatRelativeTime(ts: number): string {
   if (!ts) return '';
@@ -971,21 +973,26 @@ export function BilibiliSettings({ onOpenSession }: BilibiliSettingsProps = {}) 
                   return (
                     <div className="dsh-bili-recent-list">
                       {displayMessages.map((msg) => {
-                    const isVideo = msg.sourceType === 'video' || msg.sourceType === '1';
+                    const isCommentSource = ['评论', 'comment', 'reply'].includes(msg.sourceType.toLowerCase());
+                    const sourceType = isCommentSource ? commentSourceType(msg.id, msg.uri || '') : msg.sourceType;
+                    const isVideo = sourceType === 'video' || sourceType === '1';
                     const isDynamic =
-                      msg.sourceType === 'dynamic' ||
-                      msg.sourceType === '11' ||
-                      msg.sourceType === '16' ||
-                      msg.sourceType === '17';
-                    const tagClass = isVideo
+                      sourceType === 'dynamic' ||
+                      sourceType === '11' ||
+                      sourceType === '16' ||
+                      sourceType === '17';
+                    const tagClass = msg.status === 'ignored'
+                      ? 'dsh-bili-recent-tag'
+                      : isVideo
                       ? 'dsh-bili-recent-tag dsh-bili-recent-tag-video'
                       : isDynamic
                         ? 'dsh-bili-recent-tag dsh-bili-recent-tag-dynamic'
                         : 'dsh-bili-recent-tag';
-                    const tagText = isVideo ? '视频' : isDynamic ? '动态' : msg.sourceType || '内容';
+                    const tagText = isVideo ? '视频' : isDynamic ? '动态' : sourceType || '内容';
 
                     const sessionId = msg.sessionId?.trim();
                     const sessionTitle = msg.sessionTitle?.trim();
+                    const commentUri = commentLink(msg.uri || '', msg.id);
                     return (
                       <div key={msg.id} className="dsh-bili-recent-card">
                         <div className="dsh-bili-recent-card-top">
@@ -1016,7 +1023,13 @@ export function BilibiliSettings({ onOpenSession }: BilibiliSettingsProps = {}) 
                         </div>
 
                         {/* 来源主体信息 */}
-                        {(msg.sourceTitle || msg.sourceType) && (
+                        {isCommentSource && msg.sourceTitle && (
+                          <div className="dsh-bili-recent-source">
+                            <span className="dsh-bili-recent-tag">{msg.sourceType}</span>
+                            <span className="dsh-bili-session-title" title={msg.sourceTitle}>{msg.sourceTitle}</span>
+                          </div>
+                        )}
+                        {((!isCommentSource && (msg.sourceTitle || msg.sourceType)) || msg.uri) && (
                           <div className="dsh-bili-recent-source">
                             <span className={tagClass}>{tagText}</span>
                             {msg.uri ? (
@@ -1025,9 +1038,9 @@ export function BilibiliSettings({ onOpenSession }: BilibiliSettingsProps = {}) 
                                 target="_blank"
                                 rel="noreferrer"
                                 className="dsh-bili-recent-title-link"
-                                title={msg.sourceTitle || msg.uri}
+                                title={isCommentSource ? msg.uri : msg.sourceTitle || msg.uri}
                               >
-                                {msg.sourceTitle || '查看原内容 ↗'}
+                                {isCommentSource ? msg.uri : msg.sourceTitle || '查看原内容 ↗'}
                               </a>
                             ) : (
                               <span
@@ -1063,7 +1076,11 @@ export function BilibiliSettings({ onOpenSession }: BilibiliSettingsProps = {}) 
 
                         {/* 用户评论内容 */}
                         <div className="dsh-bili-recent-message">
-                          {msg.message || (msg.images?.length ? '[纯图片评论]' : '（无正文）')}
+                          {commentUri ? (
+                            <a href={commentUri} target="_blank" rel="noreferrer" className="dsh-bili-comment-link" title="查看这条评论">
+                              {msg.message || (msg.images?.length ? '[纯图片评论]' : '（无正文）')}
+                            </a>
+                          ) : msg.message || (msg.images?.length ? '[纯图片评论]' : '（无正文）')}
                           {msg.images && msg.images.length > 0 && (
                             <span style={{ marginLeft: 6, fontSize: 10, color: '#FB7299' }}>
                               📷 [{msg.images.length}张图片]

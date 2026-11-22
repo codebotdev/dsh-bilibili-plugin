@@ -694,6 +694,10 @@ export const styles = `
   text-decoration: underline;
 }
 
+.dsh-bili-comment-link { color: inherit; text-decoration: none; }
+.dsh-bili-comment-link:hover { color: #FB7299; text-decoration: underline; }
+.dsh-bili-comment-link:focus-visible { outline: 2px solid var(--dsw-alias-label-secondary, #666); outline-offset: 2px; }
+
 .dsh-bili-recent-message {
   font-size: 11px;
   color: var(--dsw-alias-label-primary, #222222);
