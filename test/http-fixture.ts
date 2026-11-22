@@ -2,7 +2,7 @@ import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { vi } from 'vitest';
 import type { BiliPollerConfig } from '../src/types.js';
-import type { HttpDependencies, HttpHandler, HttpServer } from '../src/http/contracts.js';
+import type { HttpConnection, HttpDependencies, HttpHandler, HttpServer } from '../src/http/contracts.js';
 
 export const defaultConfig: BiliPollerConfig = {
   enableReply: true, enableAt: true, autoLikeOnReply: false, enableWhitelist: false,
@@ -45,11 +45,12 @@ export function fixture() {
     resolveModelInfo: vi.fn(async () => ({ reasoning: { efforts: [{ id: 'high', name: 'High' }], defaultEffort: 'high' } })),
   };
   const start = vi.fn();
+  const connection = { requestRejection: vi.fn<HttpConnection['requestRejection']>(() => undefined) };
   const deps: HttpDependencies = {
-    webServer, manager, poller, getLlm: () => llm,
+    webServer, manager, poller, getLlm: () => llm, getConnection: () => connection,
     beginLogin: vi.fn(() => start), stopPolling: vi.fn(),
   };
-  return { deps, handlers, webServer, manager, poller, llm, start, unregister };
+  return { deps, handlers, webServer, manager, poller, llm, start, unregister, connection };
 }
 
 export function request(method: string, url: string, body?: unknown, origin?: string, chunks?: Buffer[]): IncomingMessage {

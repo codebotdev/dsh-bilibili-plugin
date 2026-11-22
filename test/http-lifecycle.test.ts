@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Context } from '@deepseek-ai/cordis';
-import { apply, type PluginServices } from '../src/index.js';
+import { apply, inject, type PluginServices } from '../src/index.js';
 import { deferred, fixture, invoke } from './http-fixture.js';
 
 const cleanups: Array<() => void> = [];
@@ -25,7 +25,7 @@ function lifecycle() {
   const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
   const ctx = {
     webServer: f.webServer,
-    get: vi.fn((name: string) => name === 'llm' ? f.llm : {}),
+    get: vi.fn((name: string) => name === 'llm' ? f.llm : name === 'connection' ? f.connection : {}),
     effect: vi.fn((fn: () => () => void) => { cleanup = fn(); }),
     inject: vi.fn(), logger: () => logger,
   };
@@ -41,6 +41,16 @@ function lifecycle() {
 }
 
 describe('injected plugin lifecycle (no real services or production apply)', () => {
+  it('requires the host connection and uses its live authentication service', async () => {
+    expect(inject).toContain('connection');
+    const f = lifecycle(); f.start();
+    f.connection.requestRejection.mockReturnValue(401);
+    expect((await invoke(f.handlers, 'GET', '/auth/status')).status).toBe(401);
+    expect(f.manager.getStatus).not.toHaveBeenCalled();
+    f.connection.requestRejection.mockReturnValue(undefined);
+    expect((await invoke(f.handlers, 'GET', '/auth/status')).status).toBe(200);
+    expect(f.ctx.get).toHaveBeenCalledWith('connection');
+  });
   it('keeps disabled apply inert', () => {
     const f = lifecycle();
     apply(f.ctx as unknown as Context, { enabled: false }, f.factory);

@@ -6,7 +6,7 @@ import type { HttpDependencies, HttpHandler } from './contracts.js';
 import { boolean, parsePollerConfig, text, whitelistUser } from './config.js';
 import { assertSameOrigin, errorMessage, HttpError, parseQuery, readBodyJson, requireInteger, sendJson } from './utils.js';
 
-/** One exact handler per path; all browser-origin reads AND writes receive the same origin check. */
+/** Exact webServer routes bypass Connection's /api prefix; authenticate every route here. */
 export function registerBilibiliRoutes(deps: HttpDependencies): () => void {
   const { manager, poller } = deps;
   const releases: Array<() => void> = [];
@@ -32,6 +32,16 @@ export function registerBilibiliRoutes(deps: HttpDependencies): () => void {
       handler: async (req, res) => {
         try {
           assertActive();
+          let rejection: 401 | 403 | undefined;
+          try {
+            const connection = deps.getConnection();
+            if (typeof connection?.requestRejection !== 'function') throw new Error('Missing Connection');
+            rejection = connection.requestRejection(req);
+          }
+          catch { throw new HttpError(503, 'DSH 鉴权服务不可用'); }
+          if (rejection === 401) throw new HttpError(401, '请先登录 DSH，重新打开 DSH 启动时提供的登录链接');
+          if (rejection === 403) throw new HttpError(403, 'DSH 拒绝此请求的访问来源');
+          if (rejection !== undefined) throw new HttpError(503, 'DSH 鉴权服务响应无效');
           assertSameOrigin(req);
           if (!methods.includes(req.method ?? '')) {
             res.setHeader('allow', methods.join(', '));
@@ -95,7 +105,7 @@ export function registerBilibiliRoutes(deps: HttpDependencies): () => void {
       assertActive();
       res.statusCode = 200;
       res.setHeader('content-type', image.mediaType);
-      res.setHeader('cache-control', 'public, max-age=86400');
+      res.setHeader('cache-control', 'no-store');
       res.setHeader('x-content-type-options', 'nosniff');
       res.end(image.data);
     }, 502, 'Avatar proxy error');

@@ -7,7 +7,7 @@ import { PollerService } from './poller-service.js';
 import { BilibiliAgentBridge, type BilibiliAgentPresetRegistry } from './agent-bridge.js';
 import { getLogger, setLoggerContext } from './command/logger.js';
 import { registerBilibiliRoutes } from './http/routes.js';
-import type { HttpManager, HttpPoller, HttpLlmService } from './http/contracts.js';
+import type { HttpConnection, HttpManager, HttpPoller, HttpLlmService } from './http/contracts.js';
 
 export * from './types.js';
 export * from './vault-service.js';
@@ -17,7 +17,7 @@ export * from './agent-bridge.js';
 export * from './command/index.js';
 
 export const name = '@seiuna/dsh-bilibili-plugin';
-export const inject = ['tools', 'webServer', 'agents', 'systemPrompt', 'workspaceRegistry'];
+export const inject = ['tools', 'webServer', 'connection', 'agents', 'systemPrompt', 'workspaceRegistry'];
 
 export interface Config { enabled?: boolean }
 export const Config = z.object({
@@ -100,6 +100,7 @@ export function apply(
     };
     releases.push(registerBilibiliRoutes({
       webServer: ctx.webServer, manager, poller,
+      getConnection: () => ctx.get('connection') as HttpConnection | undefined,
       getLlm: () => ctx.get('llm') as HttpLlmService | undefined,
       beginLogin: () => {
         const loginGeneration = ++generation;

@@ -7,6 +7,11 @@ export interface HttpServer {
   register(route: { kind: 'exact'; path: string; handler: HttpHandler }): () => void;
 }
 
+/** Public HostConnectionHandle.requestRejection contract (DSH 0.2.2-rc.5). */
+export interface HttpConnection {
+  requestRejection(request: Pick<IncomingMessage, 'headers'>): 401 | 403 | undefined;
+}
+
 export type HttpManager = Pick<BilibiliClientManager,
   'getStatus' | 'generateQrcode' | 'pollQrcode' | 'setupPassword' | 'unlock' | 'logout'>;
 export type HttpPoller = Pick<PollerService,
@@ -19,6 +24,7 @@ import type { ModelService as HttpLlmService } from '../model-selection.js';
 
 export interface HttpDependencies {
   webServer: HttpServer;
+  getConnection(): HttpConnection | undefined;
   manager: HttpManager;
   poller: HttpPoller;
   getLlm(): HttpLlmService | undefined;

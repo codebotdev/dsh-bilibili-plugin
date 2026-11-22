@@ -13,6 +13,59 @@ function setup() {
 afterEach(() => { active.splice(0).forEach(dispose => dispose()); vi.unstubAllGlobals(); });
 
 describe('typed HTTP routes', () => {
+  it.each([401, 403] as const)('protects every exact route and method with host rejection %s before any work', async rejection => {
+    const f = setup();
+    f.connection.requestRejection.mockReturnValue(rejection);
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    for (const handler of f.handlers.values()) {
+      for (const method of ['GET', 'POST', 'DELETE']) {
+        const req = request(method, '/?token=not-a-login', {}, 'http://127.0.0.1:43120');
+        req.headers.cookie = 'invalid-cookie';
+        const read = vi.spyOn(req, Symbol.asyncIterator);
+        const output = response();
+        await handler(req, output.res);
+        expect(output.res.statusCode).toBe(rejection);
+        expect(output.headers['cache-control']).toBe('no-store');
+        expect(read).not.toHaveBeenCalled();
+        expect(f.connection.requestRejection).toHaveBeenLastCalledWith(req);
+      }
+    }
+    for (const service of [f.manager, f.poller, f.llm]) {
+      Object.values(service).forEach(method => expect(method).not.toHaveBeenCalled());
+    }
+    expect(f.deps.beginLogin).not.toHaveBeenCalled();
+    expect(f.deps.stopPolling).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('rejects unauthenticated non-browser requests without Origin too', async () => {
+    const f = setup();
+    f.connection.requestRejection.mockReturnValue(401);
+    expect((await invoke(f.handlers, 'GET', '/poller/recent-messages')).status).toBe(401);
+    expect((await invoke(f.handlers, 'POST', '/vault/logout')).status).toBe(401);
+    expect(f.poller.getRecentMessages).not.toHaveBeenCalled();
+    expect(f.manager.logout).not.toHaveBeenCalled();
+  });
+  it('fails closed on missing, incompatible, throwing or invalid authentication and recovers per request', async () => {
+    const f = setup();
+    for (const getConnection of [
+      () => undefined,
+      () => ({} as ReturnType<typeof f.deps.getConnection>),
+      () => { throw new Error('private-auth-error'); },
+      () => ({ requestRejection: () => { throw new Error('private-auth-error'); } }),
+      () => ({ requestRejection: () => false } as unknown as ReturnType<typeof f.deps.getConnection>),
+    ]) {
+      f.deps.getConnection = getConnection;
+      const result = await invoke(f.handlers, 'GET', '/auth/status');
+      expect(result.status).toBe(503);
+      expect(result.raw().toString()).not.toContain('private-auth-error');
+    }
+    expect(f.manager.getStatus).not.toHaveBeenCalled();
+    f.deps.getConnection = () => f.connection;
+    expect((await invoke(f.handlers, 'GET', '/auth/status')).status).toBe(200);
+    f.connection.requestRejection.mockReturnValue(401);
+    expect((await invoke(f.handlers, 'GET', '/auth/status')).status).toBe(401);
+    expect(f.manager.getStatus).toHaveBeenCalledOnce();
+  });
   it('registers exactly one handler for each retained URL and both config methods', async () => {
     const f = setup();
     expect(f.handlers.size).toBe(16);
@@ -226,6 +279,7 @@ describe('avatar proxy bounded shared downloads', () => {
     expect(result.status).toBe(200);
     expect(result.raw()).toEqual(Buffer.from([1, 2, 3]));
     expect(result.headers['content-type']).toBe('image/png');
+    expect(result.headers['cache-control']).toBe('no-store');
     expect(result.headers['access-control-allow-origin']).toBeUndefined();
     expect(fetcher).toHaveBeenCalledWith(expect.objectContaining({ protocol: 'https:' }), expect.objectContaining({ redirect: 'error', signal: expect.any(AbortSignal) }));
   });
